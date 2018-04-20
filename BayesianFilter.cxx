@@ -1,3 +1,6 @@
+#include "BayesianFilter.h"
+
+
 #include "itkImage.h"
 #include "itkBayesianClassifierInitializationImageFilter.h"
 #include "itkImageFileReader.h"
@@ -11,11 +14,47 @@
 #include "itkLabelStatisticsImageFilter.h"
 #include "itkStatisticsImageFilter.h"
 
-#include "itkVectorIndexSelectionCastImageFilter.h"
-#include "iostream"
-
-int main()
+BayesianFilter::BayesianFilter()
 {
+}
+
+BayesianFilter::~BayesianFilter()
+{
+}
+
+void BayesianFilter::SetNumberOfBayesianInitialClasses(unsigned int numOfInitClasses)
+{
+	m_numOfInitClasses = numOfInitClasses;
+}
+
+void BayesianFilter::SetGaussianBlurVariance(float variance)
+{
+	m_variance = variance;
+}
+
+void BayesianFilter::SetLabelWeight(float weight)
+{
+	m_weight = weight;
+}
+
+void BayesianFilter::SetImage(ImageType::Pointer inputImage)
+{
+	m_inputImage->Graft(inputImage);
+}
+
+void BayesianFilter::SetLabel(LabelImageType::Pointer labelImage)
+{
+	m_labelImage->Graft(labelImage);
+}
+
+
+
+int abc(int argc, char* argv[])
+{
+
+
+
+
 	constexpr unsigned int Dimension = 3;
 	constexpr unsigned int numOfBayesianClasses = 2;
 	float variance = 0.3;
@@ -208,7 +247,7 @@ int main()
 
 			while (!labelIterator.IsAtEnd())
 			{
-				gaussianMembershipIterator.Get().SetElement(count, (weight*bayesianInitializerIterator.Get()[correspondBayesianClass] * 0.5 + (1.0 - weight)*labelIterator.Get() * bayesianMembershipStatFilter->GetMean()) / ((0.5 + bayesianMembershipStatFilter->GetMean()) / 2.0));
+				gaussianMembershipIterator.Get().SetElement(count, ((1.0 - weight)*bayesianInitializerIterator.Get()[correspondBayesianClass] * 0.5 + weight*labelIterator.Get() * bayesianMembershipStatFilter->GetMean()) / ((0.5 + bayesianMembershipStatFilter->GetMean()) / 2.0));
 				//if (gaussianMembershipIterator.Get().GetElement(count) < 0)
 				//{
 				//	std::cout << "correspondBayesianClass: " << correspondBayesianClass << std::endl;
@@ -276,3 +315,4 @@ int main()
 
 	labelWriter->Update();
 }
+
