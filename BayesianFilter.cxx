@@ -16,6 +16,11 @@
 
 BayesianFilter::BayesianFilter()
 {
+	// parameter initialization
+	m_numOfInitClasses = 2;
+	m_variance = 0.3;
+	m_weight = 0.5;
+	m_verbose = true;
 }
 
 BayesianFilter::~BayesianFilter()
@@ -37,6 +42,11 @@ void BayesianFilter::SetLabelWeight(float weight)
 	m_weight = weight;
 }
 
+void BayesianFilter::SetVerbose(bool verbose)
+{
+	m_verbose = verbose;
+}
+
 void BayesianFilter::SetImage(ImageType::Pointer inputImage)
 {
 	m_inputImage->Graft(inputImage);
@@ -47,6 +57,13 @@ void BayesianFilter::SetLabel(LabelImageType::Pointer labelImage)
 	m_labelImage->Graft(labelImage);
 }
 
+void BayesianFilter::Run()
+{
+	if (m_verbose)
+	{
+
+	}
+}
 
 
 int abc(int argc, char* argv[])
