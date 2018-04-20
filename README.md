@@ -13,6 +13,8 @@ The output of the filter will give a smoothed label map with pixel values indica
 
 ## Compile
 Tested with MSVC 2015, the dependencies are also available on Linux and MacOS.
+
+### Dependency
 - CMake
 - ITK
 - Boost
