@@ -14,6 +14,8 @@ public:
 	void SetNumberOfBayesianInitialClasses(unsigned int numOfInitClasses);
 	void SetGaussianBlurVariance(float variance);
 	void SetLabelWeight(float weight);
+	void SetVerbose(bool verbose);
+	void Run();
 
 private:
 	ImageType::Pointer m_inputImage;
@@ -21,6 +23,7 @@ private:
 	unsigned int m_numOfInitClasses;
 	float m_variance;
 	float m_weight;
+	bool m_verbose;
 };
 
 #endif

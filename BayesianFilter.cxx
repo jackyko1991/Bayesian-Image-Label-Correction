@@ -61,7 +61,7 @@ void BayesianFilter::Run()
 {
 	if (m_verbose)
 	{
-
+		return;
 	}
 }
 
