@@ -23,7 +23,7 @@ The filter supports PNG, NIFTI and DICOM format. By running the following script
 <img src="./example/2D/snapshot0001.png" width="205px" height="250px" title="output"/>
 </p>
 
-Note: Currently the output labels are not rescaled for PNG output. Pixel value in output image will be same as value of label class.
+Note: Currently the output labels range are not rescaled for PNG output. Pixel value in output image will be same as value of label class. You may have diffuclty in visualizing the image with typical image viewers.
 
 ### 3D image
 The filter only supports NIFTI image and label input. By running the following script in command prompt:
