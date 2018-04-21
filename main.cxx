@@ -90,7 +90,7 @@ int main(int argc, char* argv[])
 			}
 
 			// set number of Bayesian initialization classes
-				bayesianFilter.SetNumberOfBayesianInitialClasses(variableMap["classes"].as<unsigned int>());
+			bayesianFilter.SetNumberOfBayesianInitialClasses(variableMap["classes"].as<unsigned int>());
 
 			// set Gaussian blur variance
 			if (variableMap["variance"].as<float>() >= 0)
@@ -102,6 +102,15 @@ int main(int argc, char* argv[])
 				std::cerr << "Variance for Gaussian blur should be largeer than 0" << std::endl;
 				return EXIT_FAILURE;
 			}
+
+			// run the code
+			bayesianFilter.Run();
+
+			// write the output
+			LabelWriterType::Pointer labelWriter = LabelWriterType::New();
+			labelWriter->SetFileName(variableMap["output"].as<boost::filesystem::path>().string());
+			labelWriter->SetInput(bayesianFilter.GetOutput());
+			labelWriter->Write();
 		}
 	}
 	catch (const boost::program_options::error &ex)

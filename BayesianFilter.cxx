@@ -21,6 +21,12 @@ BayesianFilter::BayesianFilter()
 	m_variance = 0.3;
 	m_weight = 0.5;
 	m_verbose = true;
+	m_smooth = false;
+	m_smoothItr = 1;
+	m_gadItr = 5;
+	m_timeStep = 0.125;
+	m_conductance = 3;
+	m_output = LabelImageType::New();
 }
 
 BayesianFilter::~BayesianFilter()
@@ -47,6 +53,31 @@ void BayesianFilter::SetVerbose(bool verbose)
 	m_verbose = verbose;
 }
 
+void BayesianFilter::SetSmooth(bool smooth)
+{
+	m_smooth = smooth;
+}
+
+void BayesianFilter::SetNumberOfSmoothingIterations(unsigned int smoothItr)
+{
+	m_smoothItr = smoothItr;
+}
+
+void BayesianFilter::SetNumberOfGradientAnistropicDiffusionIterations(unsigned int gadItr)
+{
+	m_gadItr = gadItr;
+}
+
+void BayesianFilter::SetSmoothingTimeStep(float timeStep)
+{
+	m_timeStep = timeStep;
+}
+
+void BayesianFilter::SetConductanceParameter(float conductance)
+{
+	m_conductance = conductance;
+}
+
 void BayesianFilter::SetImage(ImageType::Pointer inputImage)
 {
 	m_inputImage->Graft(inputImage);
@@ -59,60 +90,46 @@ void BayesianFilter::SetLabel(LabelImageType::Pointer labelImage)
 
 void BayesianFilter::Run()
 {
-	if (m_verbose)
+	// check input is valid
+	if (m_inputImage == nullptr || m_labelImage == nullptr)
 	{
+		std::cerr << "Invalid input data" << std::endl;
 		return;
 	}
-}
 
-
-int abc(int argc, char* argv[])
-{
-
-
-
-
-	constexpr unsigned int Dimension = 3;
-	constexpr unsigned int numOfBayesianClasses = 2;
-	float variance = 0.3;
-	float weight = 0.5;
-	using ImageType = itk::Image<float, Dimension>;
-	using LabelImageType = itk::Image<unsigned char, Dimension>;
-
-	using ImageReaderType = itk::ImageFileReader<ImageType>;
-	ImageReaderType::Pointer imageReader = ImageReaderType::New();
-	//imageReader->SetFileName("D:/projects/itkBayesianFilter/data/BrainT1Slice.nii.gz");
-	//imageReader->SetFileName("D:/projects/itkBayesianFilter/data/image.nii.gz");
-	imageReader->SetFileName("D:/projects/itkBayesianFilter/data/teeth/image.nii");
-	imageReader->Update();
-
-	using LabelImageReader = itk::ImageFileReader<LabelImageType>;
-	LabelImageReader::Pointer labelReader = LabelImageReader::New();
-	//labelReader->SetFileName("D:/projects/itkBayesianFilter/data/BrainT1Slice_labeled.nii.gz");
-	//labelReader->SetFileName("D:/projects/itkBayesianFilter/data/label_teeth_denoise.nii.gz");
-	labelReader->SetFileName("D:/projects/itkBayesianFilter/data/teeth/label_teeth_IL.nii.gz");
-	labelReader->Update();
-
-	std::cout << "finish reading image..." << std::endl;
-
-	using BayesianInitializerType = itk::BayesianClassifierInitializationImageFilter<ImageType>;
-	BayesianInitializerType::Pointer bayesianInitializer = BayesianInitializerType::New();
-	bayesianInitializer->SetInput(imageReader->GetOutput());
-	bayesianInitializer->SetNumberOfClasses(numOfBayesianClasses);
-	bayesianInitializer->Update();
-
-	std::cout << "finish perfoming bayesian initialization..." << std::endl;
-
-	// extract membership image
-	using MembershipImageConstantIteratorType = itk::ImageRegionConstIterator< BayesianInitializerType::OutputImageType>;
-	using MembershipImageIteratorType = itk::ImageRegionIterator<ImageType>;
-	MembershipImageConstantIteratorType bayesianInitializeIterator(bayesianInitializer->GetOutput(),
-		bayesianInitializer->GetOutput()->GetLargestPossibleRegion());
-
-	std::vector<ImageType::Pointer> bayesianInitializerMembershipImageList;
-	for (int i = 0; i < numOfBayesianClasses; i++)
+	// check input image and label have same size
+	if (m_inputImage->GetBufferedRegion().GetSize()[0] != m_labelImage->GetBufferedRegion().GetSize()[0] ||
+		m_inputImage->GetBufferedRegion().GetSize()[1] != m_labelImage->GetBufferedRegion().GetSize()[1] || 
+		m_inputImage->GetBufferedRegion().GetSize()[2] != m_labelImage->GetBufferedRegion().GetSize()[2])
 	{
-		// allocate the membership image
+		std::cerr << "Input image and label should have same size" << std::endl;
+		return;
+	}
+
+	// Bayesian initialization
+	if (m_verbose)
+	{
+		std::cout << "Bayesian refinement in progress..." << std::endl;
+		std::cout << "Start Bayesian initialization..." << std::endl;
+	}
+
+	BayesianInitializerType::Pointer bayesianInitializer = BayesianInitializerType::New();
+	bayesianInitializer->SetInput(m_inputImage);
+	bayesianInitializer->SetNumberOfClasses(m_numOfInitClasses);
+	bayesianInitializer->Update();
+	
+	// Extract membership image
+	if (m_verbose)
+	{
+		std::cout << "Extracting membership images from Bayesian intialization..." << std::endl;
+	}
+
+	MembershipImageRegionConstIteratorType bayesianInitializerIterator(bayesianInitializer->GetOutput(),
+		bayesianInitializer->GetOutput()->GetBufferedRegion());
+	std::vector<ImageType::Pointer> bayesianInitializerMembershipImageList;
+	for (int i = 0;i < m_numOfInitClasses; i++)
+	{
+		// allocate the membership image of each initialized class
 		ImageType::Pointer membershipImage = ImageType::New();
 		bayesianInitializerMembershipImageList.push_back(membershipImage);
 		membershipImage->CopyInformation(bayesianInitializer->GetOutput());
@@ -120,73 +137,85 @@ int abc(int argc, char* argv[])
 		membershipImage->SetRequestedRegion(bayesianInitializer->GetOutput()->GetRequestedRegion());
 		membershipImage->Allocate();
 
-
-		MembershipImageIteratorType membershipIterator(membershipImage, membershipImage->GetBufferedRegion());
-
-		// iterate through the membership image
-		bayesianInitializeIterator.GoToBegin();
+		// copy memberhsip image from Bayesian initializer output
+		ImageRegionIteratorType membershipIterator(membershipImage,
+			membershipImage->GetBufferedRegion());
+		bayesianInitializerIterator.GoToBegin();
 		membershipIterator.GoToBegin();
 
-		while (!bayesianInitializeIterator.IsAtEnd())
+		while (!bayesianInitializerIterator.IsAtEnd())
 		{
-			membershipIterator.Set(bayesianInitializeIterator.Get()[i]);
+			membershipIterator.Set(bayesianInitializerIterator.Get()[i]);
 			++membershipIterator;
-			++bayesianInitializeIterator;
+			++bayesianInitializerIterator;
 		}
 	}
 
+	// Bayesian classification using Kmean
+	if (m_verbose)
+	{
+		std::cout << "Performing Bayesian classification with Kmean membership..." << std::endl;
+	}
+
 	// bayesian classification
-	using PriorType = float;
-	using PosteriorType = float;
-	using ClassifierFilterType = itk::BayesianClassifierImageFilter<
-		BayesianInitializerType::OutputImageType, LabelImageType::PixelType,
-		PosteriorType, PriorType >;
-	ClassifierFilterType::Pointer bayesianClassifierFilter = ClassifierFilterType::New();
-	bayesianClassifierFilter->SetInput(bayesianInitializer->GetOutput());
+	BayesianClassifierFilterType::Pointer bayesianClassifierFiler = BayesianClassifierFilterType::New();
+	bayesianClassifierFiler->SetInput(bayesianInitializer->GetOutput());
 
-	////filter->SetNumberOfSmoothingIterations(1);
-	////using ExtractedComponentImageType = ClassifierFilterType::ExtractedComponentImageType;
-	////using SmoothingFilterType = itk::GradientAnisotropicDiffusionImageFilter<ExtractedComponentImageType, ExtractedComponentImageType >;
-	////SmoothingFilterType::Pointer smoother = SmoothingFilterType::New();
-	////smoother->SetNumberOfIterations(5);
-	////smoother->SetTimeStep(0.125);
-	////smoother->SetConductanceParameter(3);
-	////filter->SetSmoothingFilter(smoother);
-	//bayesianClassifierFilter->Update();
-
-	//std::cout << "finish bayesian classification..." << std::endl;
+	// apply smoothing on the Bayesian classification
+	if (m_smooth)
+	{
+		bayesianClassifierFiler->SetNumberOfSmoothingIterations(1);
+		GADSmoothingFilterType::Pointer smoother = GADSmoothingFilterType::New();
+		smoother->SetNumberOfIterations(5);
+		smoother->SetTimeStep(0.125);
+		smoother->SetConductanceParameter(3);
+		bayesianClassifierFiler->SetSmoothingFilter(smoother);
+	}
+	bayesianClassifierFiler->Update();
 
 	// calculate mean in each class with bayesian segmentation output
-	using LabelStatisticsImageFilterType = itk::LabelStatisticsImageFilter<ImageType, LabelImageType>;
-	LabelStatisticsImageFilterType::Pointer bayesianOutputStatisticFilter = LabelStatisticsImageFilterType::New();
-	bayesianOutputStatisticFilter->SetInput(imageReader->GetOutput());
-	bayesianOutputStatisticFilter->SetLabelInput(bayesianClassifierFilter->GetOutput());
-	bayesianOutputStatisticFilter->Update();
+	if (m_verbose)
+	{
+		std::cout << "Calculating statistics on segmentation labels..." << std::endl;
+	}
+
+	LabelStatisticsImageFilterType::Pointer bayesianLabelStatisticFilter = LabelStatisticsImageFilterType::New();
+	bayesianLabelStatisticFilter->SetInput(m_inputImage);
+	bayesianLabelStatisticFilter->SetLabelInput(bayesianClassifierFiler->GetOutput());
+	bayesianLabelStatisticFilter->Update();
 
 	// calculate the mean in each class with user input
+
 	LabelStatisticsImageFilterType::Pointer userLabelStatisticFilter = LabelStatisticsImageFilterType::New();
-	userLabelStatisticFilter->SetInput(imageReader->GetOutput());
-	userLabelStatisticFilter->SetLabelInput(labelReader->GetOutput());
+	userLabelStatisticFilter->SetInput(m_inputImage);
+	userLabelStatisticFilter->SetLabelInput(m_labelImage);
 	userLabelStatisticFilter->Update();
 
-	// create gaussian mask image
-	using GaussianMembershipImageType = itk::VectorImage<float, Dimension>;
-	GaussianMembershipImageType::Pointer gaussianMemebership = GaussianMembershipImageType::New();
-	GaussianMembershipImageType::IndexType start;
-	GaussianMembershipImageType::SizeType size;
-	for (int i = 0; i < Dimension; i++)
+	// gaussian weighted bayesian initialization membership 
+	if (m_verbose)
 	{
-		start.SetElement(i, labelReader->GetOutput()->GetBufferedRegion().GetIndex()[i]);
-		size.SetElement(i, labelReader->GetOutput()->GetBufferedRegion().GetSize()[i]);
+		std::cout << "Calculating user label weighted membership..." << std::endl;
 	}
-	GaussianMembershipImageType::RegionType region(start, size);
+
+	// create gaussian mask image
+	StatisticsLabelImageFilterType::Pointer labelStatFilter = StatisticsLabelImageFilterType::New();
+	labelStatFilter->SetInput(m_labelImage);
+	labelStatFilter->Update();
+
+	MembershipImageType::Pointer gaussianMemebership = MembershipImageType::New();
+	MembershipImageType::IndexType start;
+	MembershipImageType::SizeType size;
+	for (int i = 0; i < 3; i++)
+	{
+		start.SetElement(i, m_labelImage->GetBufferedRegion().GetIndex()[i]);
+		size.SetElement(i, m_labelImage->GetBufferedRegion().GetSize()[i]);
+	}
+	MembershipImageType::RegionType region(start, size);
 	gaussianMemebership->SetRegions(region);
-	gaussianMemebership->SetNumberOfComponentsPerPixel(userLabelStatisticFilter->GetNumberOfLabels());
+	gaussianMemebership->SetNumberOfComponentsPerPixel(labelStatFilter->GetMaximum()+1); // note that there is 0 class
 	gaussianMemebership->Allocate();
 
-	// gaussian weighted bayesian initialization membership 
-	int count = 0;
-
+	// calculate the membership for each class in user label input
 	for (auto vIt = userLabelStatisticFilter->GetValidLabelValues().begin();
 		vIt != userLabelStatisticFilter->GetValidLabelValues().end();
 		++vIt)
@@ -194,47 +223,43 @@ int abc(int argc, char* argv[])
 		if (userLabelStatisticFilter->HasLabel(*vIt))
 		{
 			unsigned short labelValue = *vIt;
-			std::cout << "label: " << labelValue << std::endl;
-			std::cout << "mean: " << userLabelStatisticFilter->GetMean(labelValue) << std::endl;
-			std::cout << "variance: " << userLabelStatisticFilter->GetVariance(labelValue) << std::endl;
+			//std::cout << "label: " << labelValue << std::endl;
+			//std::cout << "mean: " << userLabelStatisticFilter->GetMean(labelValue) << std::endl;
 
 			// find the bayesian segmented class with nearest mean
 			float diff = std::numeric_limits<float>::max();
 			unsigned short correspondBayesianClass = 0;
-			for (auto bayesianLabelStatIt = bayesianOutputStatisticFilter->GetValidLabelValues().begin();
-				bayesianLabelStatIt != bayesianOutputStatisticFilter->GetValidLabelValues().end();
+			for (auto bayesianLabelStatIt = bayesianLabelStatisticFilter->GetValidLabelValues().begin();
+				bayesianLabelStatIt != bayesianLabelStatisticFilter->GetValidLabelValues().end();
 				++bayesianLabelStatIt)
 			{
-				if (bayesianOutputStatisticFilter->HasLabel(*bayesianLabelStatIt))
+				if (bayesianLabelStatisticFilter->HasLabel(*bayesianLabelStatIt))
 				{
-					if (std::abs(bayesianOutputStatisticFilter->GetMean(*bayesianLabelStatIt) - userLabelStatisticFilter->GetMean(labelValue)) < diff)
+					if (std::abs(bayesianLabelStatisticFilter->GetMean(*bayesianLabelStatIt) - userLabelStatisticFilter->GetMean(labelValue)) < diff)
 					{
-						diff = std::abs(bayesianOutputStatisticFilter->GetMean(*bayesianLabelStatIt) - userLabelStatisticFilter->GetMean(labelValue));
+						diff = std::abs(bayesianLabelStatisticFilter->GetMean(*bayesianLabelStatIt) - userLabelStatisticFilter->GetMean(labelValue));
 						correspondBayesianClass = *bayesianLabelStatIt;
 					}
 				}
 			}
 
-			std::cout << "corresponding bayesian class: " << correspondBayesianClass << std::endl;
-			std::cout << "mean: " << bayesianOutputStatisticFilter->GetMean(correspondBayesianClass) << std::endl;
+			//std::cout << "corresponding bayesian class: " << correspondBayesianClass << std::endl;
+			//std::cout << "mean: " << bayesianLabelStatisticFilter->GetMean(correspondBayesianClass) << std::endl;
 
 			// calculate statistic of each membership class
-			using StatisticsImageFilterType = itk::StatisticsImageFilter<ImageType>;
 			StatisticsImageFilterType::Pointer bayesianMembershipStatFilter = StatisticsImageFilterType::New();
 			bayesianMembershipStatFilter->SetInput(bayesianInitializerMembershipImageList.at(correspondBayesianClass));
 			bayesianMembershipStatFilter->Update();
 
-			std::cout << "Bayesian membership class: " << correspondBayesianClass << std::endl;
-			std::cout << "Mean: " << bayesianMembershipStatFilter->GetMean() << std::endl;
-			std::cout << "Std.: " << bayesianMembershipStatFilter->GetSigma() << std::endl;
+			//std::cout << "Bayesian membership class: " << correspondBayesianClass << std::endl;
+			//std::cout << "Mean: " << bayesianMembershipStatFilter->GetMean() << std::endl;
 
-
-			std::cout << "***************************************" << std::endl;
+			//std::cout << "***************************************" << std::endl;
 
 			// extract the label
 			using BinaryThresholdImageFilterType = itk::BinaryThresholdImageFilter<LabelImageType, LabelImageType>;
 			BinaryThresholdImageFilterType::Pointer thresholdFilter = BinaryThresholdImageFilterType::New();
-			thresholdFilter->SetInput(labelReader->GetOutput());
+			thresholdFilter->SetInput(m_labelImage);
 			thresholdFilter->SetUpperThreshold(labelValue);
 			thresholdFilter->SetLowerThreshold(labelValue);
 			thresholdFilter->SetInsideValue(1);
@@ -242,20 +267,16 @@ int abc(int argc, char* argv[])
 			thresholdFilter->Update();
 
 			// apply gaussian blur on the label
-			using GaussianFilterType = itk::DiscreteGaussianImageFilter<LabelImageType, ImageType>;
 			GaussianFilterType::Pointer gaussianFilter = GaussianFilterType::New();
 			gaussianFilter->SetInput(thresholdFilter->GetOutput());
-			gaussianFilter->SetVariance(variance);
+			gaussianFilter->SetVariance(m_variance);
 			gaussianFilter->Update();
 
-			using ConstLabelImageIteratorType = itk::ImageRegionConstIterator< ImageType >;
-			using ConstMembershipIteratorType = itk::ImageRegionConstIterator<BayesianInitializerType::OutputImageType>;
-			using GaussianMembershipIteratorType = itk::ImageRegionIterator<GaussianMembershipImageType>;
-			ConstLabelImageIteratorType labelIterator(gaussianFilter->GetOutput(),
+			ImageRegionConstIteratorType labelIterator(gaussianFilter->GetOutput(),
 				gaussianFilter->GetOutput()->GetLargestPossibleRegion());
-			ConstMembershipIteratorType bayesianInitializerIterator(bayesianInitializer->GetOutput(),
-				bayesianInitializer->GetOutput()->GetLargestPossibleRegion());
-			GaussianMembershipIteratorType gaussianMembershipIterator(gaussianMemebership,
+			//MembershipImageRegionConstIteratorType bayesianInitializerIterator(bayesianInitializer->GetOutput(),
+			//	bayesianInitializer->GetOutput()->GetLargestPossibleRegion());
+			MembershipImageRegionIteratorType gaussianMembershipIterator(gaussianMemebership,
 				gaussianMemebership->GetLargestPossibleRegion());
 
 			labelIterator.GoToBegin();
@@ -264,7 +285,7 @@ int abc(int argc, char* argv[])
 
 			while (!labelIterator.IsAtEnd())
 			{
-				gaussianMembershipIterator.Get().SetElement(count, ((1.0 - weight)*bayesianInitializerIterator.Get()[correspondBayesianClass] * 0.5 + weight*labelIterator.Get() * bayesianMembershipStatFilter->GetMean()) / ((0.5 + bayesianMembershipStatFilter->GetMean()) / 2.0));
+				gaussianMembershipIterator.Get().SetElement(labelValue, ((1.0 - m_weight)*bayesianInitializerIterator.Get()[correspondBayesianClass] * 0.5 + m_weight*labelIterator.Get() * bayesianMembershipStatFilter->GetMean()) / ((0.5 + bayesianMembershipStatFilter->GetMean()) / 2.0));
 				//if (gaussianMembershipIterator.Get().GetElement(count) < 0)
 				//{
 				//	std::cout << "correspondBayesianClass: " << correspondBayesianClass << std::endl;
@@ -276,60 +297,28 @@ int abc(int argc, char* argv[])
 				++bayesianInitializerIterator;
 				++labelIterator;
 			}
-
-			count++;
 		}
 	}
 
-	//// save the final membership image
-	//for (int i = 0; i < gaussianMemebership->GetNumberOfComponentsPerPixel(); i++)
-	//{
-	//	using ExtractedComponentImageType = itk::Image< float, Dimension >;
-
-	//	ExtractedComponentImageType::Pointer extractedComponentImage = ExtractedComponentImageType::New();
-	//	extractedComponentImage->CopyInformation(gaussianMemebership);
-	//	extractedComponentImage->SetBufferedRegion(gaussianMemebership->GetBufferedRegion());
-	//	extractedComponentImage->SetRequestedRegion(gaussianMemebership->GetRequestedRegion());
-	//	extractedComponentImage->Allocate();
-	//	using ConstIteratorType = itk::ImageRegionConstIterator< GaussianMembershipImageType >;
-	//	using IteratorType = itk::ImageRegionIterator< ExtractedComponentImageType >;
-	//	ConstIteratorType cit(gaussianMemebership,
-	//		gaussianMemebership->GetBufferedRegion());
-	//	IteratorType it(extractedComponentImage,
-	//		extractedComponentImage->GetLargestPossibleRegion());
-
-	//	cit.GoToBegin();
-	//	it.GoToBegin();
-
-	//	while (!cit.IsAtEnd())
-	//	{
-	//		it.Set(cit.Get()[i]);
-
-	//		++it;
-	//		++cit;
-	//	}
-
-
-	//	using WriterType = itk::ImageFileWriter< ExtractedComponentImageType >;
-	//	WriterType::Pointer membershipWriter = WriterType::New();
-	//	membershipWriter->SetFileName("D:/projects/itkBayesianFilter/data/membership_" + std::to_string(i)+ ".nii.gz");
-	//	membershipWriter->SetInput(extractedComponentImage);
-	//	membershipWriter->Update();
-	//}
-
+	// final Bayesian segmentation
+	if (m_verbose)
+	{
+		std::cout << "Performing label refinement..." << std::endl;
+	}
 	// final bayesian classification
-	ClassifierFilterType::Pointer bayesianClassifierFilter2 = ClassifierFilterType::New();
+	BayesianClassifierFilterType::Pointer bayesianClassifierFilter2 = BayesianClassifierFilterType::New();
 	bayesianClassifierFilter2->SetInput(gaussianMemebership);
 	bayesianClassifierFilter2->Update();
 
-	//using OutputImageType = itk::Image< unsigned char, Dimension >;
-	using LabelWriterType = itk::ImageFileWriter<LabelImageType>;
-	LabelWriterType::Pointer labelWriter = LabelWriterType::New();
-	labelWriter->SetInput(bayesianClassifierFilter2->GetOutput());
-	//writer->SetFileName("D:/projects/itkBayesianFilter/data/class_" + std::to_string(i) + ".nii");
-	//labelWriter->SetFileName("D:/projects/itkBayesianFilter/data/label_bayesian_new.nii");
-	labelWriter->SetFileName("D:/projects/itkBayesianFilter/data/teeth/label_teeth_IL_bayesian.nii.gz");
-
-	labelWriter->Update();
+	m_output->Graft(bayesianClassifierFilter2->GetOutput());
 }
 
+LabelImageType::Pointer BayesianFilter::GetOutput()
+{
+	return m_output;
+}
+
+void BayesianFilter::SetOutput(LabelImageType::Pointer output)
+{
+	m_output = output;
+}
