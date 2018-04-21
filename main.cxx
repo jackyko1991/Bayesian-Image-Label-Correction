@@ -41,11 +41,9 @@ int main(int argc, char* argv[])
 					// read the image
 					ImageReaderType::Pointer imageReader = ImageReaderType::New();
 					imageReader->SetFileName(variableMap["input"].as<boost::filesystem::path>().string());
-
 					try
 					{
 						imageReader->Update();
-						bayesianFilter.SetImage(imageReader->GetOutput());
 					}
 					catch (itk::ExceptionObject & excp)
 					{
@@ -53,6 +51,8 @@ int main(int argc, char* argv[])
 						std::cerr << excp << std::endl;
 						return EXIT_FAILURE;
 					}
+
+					bayesianFilter.SetImage(imageReader->GetOutput());
 				}
 				else
 				{
@@ -73,7 +73,6 @@ int main(int argc, char* argv[])
 					try
 					{
 						labelReader->Update();
-						bayesianFilter.SetLabel(labelReader->GetOutput());
 					}
 					catch (itk::ExceptionObject & excp)
 					{
@@ -81,6 +80,7 @@ int main(int argc, char* argv[])
 						std::cerr << excp << std::endl;
 						return EXIT_FAILURE;
 					}
+					bayesianFilter.SetLabel(labelReader->GetOutput());
 				}
 				else
 				{
@@ -95,11 +95,22 @@ int main(int argc, char* argv[])
 			// set Gaussian blur variance
 			if (variableMap["variance"].as<float>() >= 0)
 			{
-				bayesianFilter.SetNumberOfBayesianInitialClasses(variableMap["classes"].as<unsigned int>());
+				bayesianFilter.SetGaussianBlurVariance(variableMap["variance"].as<float>());
 			}
 			else
 			{
 				std::cerr << "Variance for Gaussian blur should be largeer than 0" << std::endl;
+				return EXIT_FAILURE;
+			}
+
+			// set weight of label input
+			if (variableMap["weight"].as<float>() >= 0 && variableMap["weight"].as<float>() <=1 )
+			{
+				bayesianFilter.SetLabelWeight(variableMap["weight"].as<float>());
+			}
+			else
+			{
+				std::cerr << "Weight of input label in membership should between 0 and 1" << std::endl;
 				return EXIT_FAILURE;
 			}
 

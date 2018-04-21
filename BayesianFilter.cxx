@@ -26,6 +26,8 @@ BayesianFilter::BayesianFilter()
 	m_gadItr = 5;
 	m_timeStep = 0.125;
 	m_conductance = 3;
+	m_inputImage = ImageType::New();
+	m_labelImage = LabelImageType::New();
 	m_output = LabelImageType::New();
 }
 

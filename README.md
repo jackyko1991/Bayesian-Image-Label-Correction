@@ -10,6 +10,29 @@ The new membership image is a vector image with same number of components as the
 The output of the filter will give a smoothed label map with pixel values indicating the classes that they belongs to. Currently the method will rearrange the label value if the user defined label values are not consecutive.
 
 ## Example Usage
+### 2D image
+The filter supports PNG, NIFTI and DICOM format. By running the following script in command prompt:
+
+```
+.\BayesianFilter.exe -i <2D-data-folder>/BrainT1Slice.nii.gz -l <2D-data-folder>/BrainT1Slice.nii.gz -o <2D-data-folder>/BrainT1Slice_output.nii.gz -c 3 -v 1 -w 0.5
+```
+
+<p align="center"> 
+<img src="./example/2D/snapshot0000.png" width="205px" height="250px" title="input"/>
+<img src="./example/2D/snapshot0002.png" width="205px" height="250px" title="label"/>
+<img src="./example/2D/snapshot0001.png" width="205px" height="250px" title="output"/>
+</p>
+
+Note: Currently the output labels are not rescaled for PNG output. Pixel value in output image will be same as value of label class.
+
+### 3D image
+The filter only supports NIFTI image and label input. By running the following script in command prompt:
+
+```
+.\BayesianFilter.exe -i <3D-data-folder>/image.nii.gz -l <3D-data-folder>/label.nii.gz -o <3D-data-folder>output.nii.gz -c 2 -v 1 -w 0.5
+```
+
+You can view the output result with [itk-SNAP](http://www.itksnap.org/pmwiki/pmwiki.php)
 
 ## Compile
 Tested with MSVC 2015, the dependencies are also available on Linux and MacOS.
