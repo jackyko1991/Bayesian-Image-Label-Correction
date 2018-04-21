@@ -29,10 +29,17 @@ Note: Currently the output labels are not rescaled for PNG output. Pixel value i
 The filter only supports NIFTI image and label input. By running the following script in command prompt:
 
 ```
-.\BayesianFilter.exe -i <3D-data-folder>/image.nii.gz -l <3D-data-folder>/label.nii.gz -o <3D-data-folder>output.nii.gz -c 2 -v 1 -w 0.5
+.\BayesianFilter.exe -i <3D-data-folder>/image.nii.gz -l <3D-data-folder>/label.nii.gz -o <3D-data-folder>output.nii.gz -c 2 -v 0.3 -w 0.5
 ```
 
 You can view the output result with [itk-SNAP](http://www.itksnap.org/pmwiki/pmwiki.php)
+
+<p align="center"> 
+<img src="./example/3D/input_label.png" width="205px" height="250px" title="input"/>
+<img src="./example/3D/output_label.png" width="205px" height="250px" title="output"/>
+<img src="./example/3D/input_3d.png" width="205px" height="250px" title="3D rendered input"/>
+<img src="./example/3D/output_3d.png" width="205px" height="250px" title="3D rendered output"/>
+</p>
 
 ## Compile
 Tested with MSVC 2015, the dependencies are also available on Linux and MacOS.
